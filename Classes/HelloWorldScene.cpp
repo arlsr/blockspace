@@ -47,23 +47,21 @@ bool HelloWorld::init()
     auto menu = Menu::create(closeItem, NULL);
     menu->setPosition(Vec2::ZERO);
     this->addChild(menu, 1);
-
-    /////////////////////////////
-    // 3. add your codes below...
-
-    // add a label shows "Hello World"
-    // create and initialize a label
     
-    auto label = Label::createWithTTF("Hello World", "fonts/Marker Felt.ttf", 24);
+    auto label = Label::createWithTTF("Blockspace", "fonts/Marker Felt.ttf", 24);
     
     // position the label on the center of the screen
     label->setPosition(Vec2(origin.x + visibleSize.width/2,
                             origin.y + visibleSize.height - label->getContentSize().height));
 
+	label->setColor(cocos2d::Color3B(190, 230, 240));
     // add the label as a child to this layer
     this->addChild(label, 1);
 
-    // add "HelloWorld" splash screen"
+	this->lblCoords = Label::createWithTTF("x: 0, y: 0", "fonts/Marker Felt.ttf", 12);
+	this->lblCoords->setPosition(50, visibleSize.height - 12);
+	this->addChild(lblCoords, 1);
+
     auto sprite = Sprite::create("Ship.png");
 
     // position the sprite on the center of the screen
