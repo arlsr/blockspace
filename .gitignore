@@ -1,7 +1,6 @@
 CMakeLists.txt
 cocos2d
 Debug.win32
-res
 
 .vs
 
