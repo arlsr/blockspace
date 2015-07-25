@@ -1,3 +1,13 @@
+CMakeLists.txt
+cocos2d
+Debug.win32
+res
+
+.vs
+
+*.sdf
+*.user
+
 # Compiled Object files
 *.slo
 *.lo
