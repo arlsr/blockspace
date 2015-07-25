@@ -1,7 +1,8 @@
 CMakeLists.txt
 cocos2d
 Debug.win32
-res
+
+Resources/res
 
 .vs
 
@@ -37,3 +38,5 @@ res
 *.exe
 *.out
 *.app
+
+proj.win32/Blockspace.opensdf
