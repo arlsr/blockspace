@@ -3,6 +3,7 @@ cocos2d
 Debug.win32
 
 Resources/res
+proj.win32/Blockspace.opensdf
 
 .vs
 
@@ -38,10 +39,4 @@ Resources/res
 *.exe
 *.out
 *.app
-<<<<<<< HEAD
 
-proj.win32/Blockspace.opensdf
-=======
-
-proj.win32/Blockspace.opensdf
->>>>>>> 474dc637b8077644d7c2e1de858e235b768929fc
