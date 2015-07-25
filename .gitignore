@@ -36,3 +36,5 @@ res
 *.exe
 *.out
 *.app
+
+proj.win32/Blockspace.opensdf
