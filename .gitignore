@@ -5,6 +5,7 @@ res
 
 .vs
 
+*.opensdf
 *.sdf
 *.user
 
