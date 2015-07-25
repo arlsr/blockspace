@@ -1,6 +1,7 @@
 CMakeLists.txt
 cocos2d
 Debug.win32
+Release.win32
 
 Resources/res
 proj.win32/Blockspace.opensdf
