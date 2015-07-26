@@ -6,13 +6,14 @@ class Ship :
 {
 private:
 	cocos2d::Label *lblCoords;
+	cocos2d::Sprite *grid;
 	bool rotatingLeft;
 	bool rotatingRight;
 	bool propellingForward;
 	float worldX;
 	float worldY;
 public:
-	Ship(cocos2d::Label *lblCoords);
+	Ship(cocos2d::Label *lblCoords, cocos2d::Sprite *grid);
 	~Ship();
 	void onKeyPressed(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event * event);
 	void onKeyReleased(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event * event);

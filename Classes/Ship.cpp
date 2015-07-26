@@ -6,12 +6,13 @@ So far this is acting as the player's ship. It should be a base class for any sh
 */
 
 
-Ship::Ship(cocos2d::Label *lblCoords)
+Ship::Ship(cocos2d::Label *lblCoords, cocos2d::Sprite *grid)
 {
 	rotatingLeft = rotatingRight = propellingForward = false;
 	worldX = worldY = 0;
 
 	this->lblCoords = lblCoords;
+	this->grid = grid;
 	this->initWithFile("Ship.png");
 	this->scheduleUpdate();
 
@@ -74,6 +75,8 @@ void Ship::stepForward(float delta) {
 
 	worldX += velocity.x * delta;
 	worldY += velocity.y * delta;
+
+	this->grid->setPosition(-worldX, -worldY);
 }
 
 void Ship::update(float delta) {
