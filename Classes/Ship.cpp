@@ -48,9 +48,9 @@ void Ship::update(float delta) {
 	this->lblCoords->setString(os.str());
 
 	if (rotatingLeft) {
-		this->setRotation(this->getRotation() - 1);
+		this->setRotation(this->getRotation() - (60 * delta));
 	}
 	if (rotatingRight) {
-		this->setRotation(this->getRotation() + 1);
+		this->setRotation(this->getRotation() + (60 * delta));
 	}
 }
