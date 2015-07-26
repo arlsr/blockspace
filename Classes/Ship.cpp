@@ -57,8 +57,9 @@ void Ship::stepForward(float delta) {
 	float speed = 100.0;
 	float rotationRadians = rotation * (M_PI / 180);
 
-	direction.x = cos(rotationRadians);
-	direction.y = sin(rotationRadians);
+	// Sin and cos are swapped because cocos2d uses a different corner for 0,0 than other libraries.
+	direction.x = sin(rotationRadians);
+	direction.y = cos(rotationRadians);
 	if (direction.length() > 0) {
 		direction.normalize();
 	}
