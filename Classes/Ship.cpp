@@ -83,10 +83,10 @@ void Ship::update(float delta) {
 	this->lblCoords->setString(os.str());
 
 	if (rotatingLeft) {
-		this->setRotation(this->getRotation() - (60 * delta));
+		this->setRotation(this->getRotation() - (100 * delta));
 	}
 	if (rotatingRight) {
-		this->setRotation(this->getRotation() + (60 * delta));
+		this->setRotation(this->getRotation() + (100 * delta));
 	}
 	// HACK: This has to be the wrong way to change a sprite.
 	if (propellingForward) {

@@ -69,6 +69,10 @@ bool HelloWorld::init()
 
     // add the sprite as a child to this layer
     this->addChild(ship, 0);
+
+
+	auto grid = Sprite::create("Grid.png");
+	this->addChild(grid, -1);
     
     return true;
 }
