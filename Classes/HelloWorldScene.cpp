@@ -62,13 +62,13 @@ bool HelloWorld::init()
 	this->lblCoords->setPosition(50, visibleSize.height - 12);
 	this->addChild(lblCoords, 1);
 
-    auto sprite = Sprite::create("Ship.png");
+	auto ship = new Ship(this->lblCoords);
 
     // position the sprite on the center of the screen
-    sprite->setPosition(Vec2(visibleSize.width/2 + origin.x, visibleSize.height/2 + origin.y));
+    ship->setPosition(Vec2(visibleSize.width/2 + origin.x, visibleSize.height/2 + origin.y));
 
     // add the sprite as a child to this layer
-    this->addChild(sprite, 0);
+    this->addChild(ship, 0);
     
     return true;
 }
