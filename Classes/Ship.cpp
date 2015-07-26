@@ -1,5 +1,9 @@
 #include "Ship.h"
 
+/*
+So far this is acting as the player's ship. It should be a base class for any ship or at least rename this one PlayerShip.
+
+*/
 
 
 Ship::Ship(cocos2d::Label *lblCoords)
@@ -66,14 +70,15 @@ void Ship::stepForward(float delta) {
 
 	//Update the position based on our current speed
 	//This is basic s = vt physics
+
 	worldX += velocity.x * delta;
 	worldY += velocity.y * delta;
 }
 
 void Ship::update(float delta) {
-	
+
 	std::ostringstream os;
-	os << "x: " << worldX << ", y:" << worldY;
+	os << "x: " << (int)worldX << ", y: " << (int)worldY;
 	this->lblCoords->setString(os.str());
 
 	if (rotatingLeft) {

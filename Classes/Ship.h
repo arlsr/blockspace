@@ -9,8 +9,8 @@ private:
 	bool rotatingLeft;
 	bool rotatingRight;
 	bool propellingForward;
-	int worldX;
-	int worldY;
+	float worldX;
+	float worldY;
 public:
 	Ship(cocos2d::Label *lblCoords);
 	~Ship();
