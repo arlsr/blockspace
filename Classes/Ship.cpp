@@ -51,8 +51,8 @@ void Ship::onKeyReleased(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event
 		this->propellingForward = false;
 }
 
-void Ship::stepForward(float delta) {
-
+void Ship::stepForward(float delta)
+{
 	cocos2d::Vec2 direction, velocity;
 	float rotation = this->getRotation();
 	float speed = 100.0;
@@ -79,8 +79,8 @@ void Ship::stepForward(float delta) {
 	this->grid->setPosition(-worldX, -worldY);
 }
 
-void Ship::update(float delta) {
-
+void Ship::update(float delta)
+{
 	std::ostringstream os;
 	os << "x: " << (int)worldX << ", y: " << (int)worldY;
 	this->lblCoords->setString(os.str());

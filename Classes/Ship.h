@@ -20,4 +20,3 @@ public:
 	void stepForward(float delta);
 	void update(float delta) override;
 };
-
