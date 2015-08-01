@@ -10,6 +10,7 @@ Ship::Ship(cocos2d::Label *lblCoords, cocos2d::Sprite *grid)
 {
 	rotatingLeft = rotatingRight = propellingForward = false;
 	worldX = worldY = 0;
+	speed = 0;
 
 	this->lblCoords = lblCoords;
 	this->grid = grid;
@@ -55,8 +56,11 @@ void Ship::stepForward(float delta)
 {
 	cocos2d::Vec2 direction, velocity;
 	float rotation = this->getRotation();
-	float speed = 100.0;
 	float rotationRadians = rotation * (M_PI / 180);
+
+	if (speed < 10)
+		speed = 10;
+	speed += 10.0 * delta;
 
 	// Sin and cos are swapped because cocos2d uses a different corner for 0,0 than other libraries.
 	direction.x = sin(rotationRadians);
@@ -82,7 +86,7 @@ void Ship::stepForward(float delta)
 void Ship::update(float delta)
 {
 	std::ostringstream os;
-	os << "x: " << (int)worldX << ", y: " << (int)worldY;
+	os << "x: " << (int)worldX << ", y: " << (int)worldY << ", speed: " << (int)speed;
 	this->lblCoords->setString(os.str());
 
 	if (rotatingLeft) {
@@ -99,5 +103,7 @@ void Ship::update(float delta)
 	}
 	else {
 		this->initWithFile("Ship.png");
+
+		speed = 0;
 	}
 }

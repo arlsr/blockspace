@@ -10,6 +10,7 @@ private:
 	bool rotatingLeft;
 	bool rotatingRight;
 	bool propellingForward;
+	float speed;
 	float worldX;
 	float worldY;
 public:
