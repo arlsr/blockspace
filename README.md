@@ -1,1 +1,3 @@
-# blockspace
+# Blockspace
+
+A spaceship game.
