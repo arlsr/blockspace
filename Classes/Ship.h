@@ -11,6 +11,8 @@ private:
 	bool rotatingRight;
 	bool propellingForward;
 	float speed;
+	float velX;
+	float velY;
 	float worldX;
 	float worldY;
 public:
