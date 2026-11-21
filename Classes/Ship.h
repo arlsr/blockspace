@@ -6,7 +6,7 @@ class Ship :
 {
 private:
 	cocos2d::Label *lblCoords;
-	cocos2d::Sprite *grid;
+	cocos2d::Node *starLayers[3];
 	bool rotatingLeft;
 	bool rotatingRight;
 	bool propellingForward;
@@ -16,7 +16,8 @@ private:
 	float worldX;
 	float worldY;
 public:
-	Ship(cocos2d::Label *lblCoords, cocos2d::Sprite *grid);
+	static const int STAR_TILE_SIZE = 1024;
+	Ship(cocos2d::Label *lblCoords, cocos2d::Node *farStars, cocos2d::Node *midStars, cocos2d::Node *nearStars);
 	~Ship();
 	void onKeyPressed(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event * event);
 	void onKeyReleased(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event * event);

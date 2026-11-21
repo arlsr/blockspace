@@ -6,7 +6,7 @@ So far this is acting as the player's ship. It should be a base class for any sh
 */
 
 
-Ship::Ship(cocos2d::Label *lblCoords, cocos2d::Sprite *grid)
+Ship::Ship(cocos2d::Label *lblCoords, cocos2d::Node *farStars, cocos2d::Node *midStars, cocos2d::Node *nearStars)
 {
 	rotatingLeft = rotatingRight = propellingForward = false;
 	worldX = worldY = 0;
@@ -14,7 +14,9 @@ Ship::Ship(cocos2d::Label *lblCoords, cocos2d::Sprite *grid)
 	velX = velY = 0;
 
 	this->lblCoords = lblCoords;
-	this->grid = grid;
+	this->starLayers[0] = farStars;
+	this->starLayers[1] = midStars;
+	this->starLayers[2] = nearStars;
 	this->initWithFile("Ship.png");
 	this->scheduleUpdate();
 
@@ -85,7 +87,14 @@ void Ship::update(float delta)
 	// Momentum: the ship keeps moving at its stored velocity when thrust is off.
 	worldX += velX * delta;
 	worldY += velY * delta;
-	this->grid->setPosition(-worldX, -worldY);
+	float tile = (float)STAR_TILE_SIZE;
+	// Each layer scrolls at a fraction of the ship's movement, so nearer stars appear to move faster.
+	const float parallax[3] = { 0.25f, 0.5f, 1.0f };
+	for (int i = 0; i < 3; ++i) {
+		float wrapX = fmod(fmod(worldX * parallax[i], tile) + tile, tile);
+		float wrapY = fmod(fmod(worldY * parallax[i], tile) + tile, tile);
+		this->starLayers[i]->setPosition(-wrapX, -wrapY);
+	}
 
 	speed = sqrt(velX * velX + velY * velY);
 	std::ostringstream os;

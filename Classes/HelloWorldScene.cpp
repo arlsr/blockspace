@@ -62,10 +62,30 @@ bool HelloWorld::init()
 	this->lblCoords->setPosition(50, visibleSize.height - 12);
 	this->addChild(lblCoords, 1);
 
-	auto grid = Sprite::create("Grid.png");
-	this->addChild(grid, -1);
+	// Three star layers at different depths. Each scrolls at a different fraction of the ship's movement.
+	auto farStars = DrawNode::create();
+	auto midStars = DrawNode::create();
+	auto nearStars = DrawNode::create();
+	DrawNode* layers[3] = { farStars, midStars, nearStars };
+	const int layerStars[3] = { 120, 80, 40 };
+	const float layerRadius[3] = { 0.4f, 0.7f, 1.1f };
+	const int tile = Ship::STAR_TILE_SIZE;
+	for (int layer = 0; layer < 3; ++layer) {
+		for (int i = 0; i < layerStars[layer]; ++i) {
+			float x = (float)(rand() % tile);
+			float y = (float)(rand() % tile);
+			float radius = layerRadius[layer] * (0.5f + (rand() % 100) / 100.0f);
+			float brightness = 0.5f + (rand() % 50) / 100.0f;
+			for (int tx = 0; tx < 3; ++tx) {
+				for (int ty = 0; ty < 3; ++ty) {
+					layers[layer]->drawDot(Vec2(x + tx * tile, y + ty * tile), radius, Color4F(1.0f, 1.0f, 1.0f, brightness));
+				}
+			}
+		}
+		this->addChild(layers[layer], layer - 3);
+	}
 
-	auto ship = new Ship(this->lblCoords, grid);
+	auto ship = new Ship(this->lblCoords, farStars, midStars, nearStars);
 
     // position the sprite on the center of the screen
     ship->setPosition(Vec2(visibleSize.width/2 + origin.x, visibleSize.height/2 + origin.y));
