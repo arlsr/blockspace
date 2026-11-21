@@ -76,13 +76,18 @@ void Ship::update(float delta)
 	if (rotatingRight) {
 		this->setRotation(this->getRotation() + (100 * delta));
 	}
-	// HACK: This has to be the wrong way to change a sprite.
-	if (propellingForward) {
-		this->initWithFile("Ship_fwd.png");
-		stepForward(delta);
+	// Textures are cached once and swapped only when the thrust state changes.
+	if (!texShip) {
+		texShip = cocos2d::Director::getInstance()->getTextureCache()->addImage("Ship.png");
+		texShipFwd = cocos2d::Director::getInstance()->getTextureCache()->addImage("Ship_fwd.png");
 	}
-	else {
-		this->initWithFile("Ship.png");
+	if (propellingForward != thrustShown) {
+		thrustShown = propellingForward;
+		this->setTexture(thrustShown ? texShipFwd : texShip);
+		this->setTextureRect(cocos2d::Rect(cocos2d::Vec2::ZERO, this->getTexture()->getContentSize()));
+	}
+	if (propellingForward) {
+		stepForward(delta);
 	}
 
 	// Gravity from the planet follows the inverse-square law. Surface gravity is 9.81 m/s^2, which is 0.001463 px/s^2 at this scale (1 px = 6,706 m).

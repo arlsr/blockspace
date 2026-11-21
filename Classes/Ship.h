@@ -9,6 +9,8 @@ private:
 	cocos2d::Node *starLayers[3];
 	cocos2d::Node *planet;
 	cocos2d::Label *lblX = nullptr, *lblY = nullptr, *lblSpeed = nullptr;
+	cocos2d::Texture2D *texShip = nullptr, *texShipFwd = nullptr;
+	bool thrustShown = false;
 	bool rotatingLeft;
 	bool rotatingRight;
 	bool propellingForward;
