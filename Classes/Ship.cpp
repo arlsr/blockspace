@@ -6,7 +6,7 @@ So far this is acting as the player's ship. It should be a base class for any sh
 */
 
 
-Ship::Ship(cocos2d::Label *lblCoords, cocos2d::Node *farStars, cocos2d::Node *midStars, cocos2d::Node *nearStars)
+Ship::Ship(cocos2d::Label *lblCoords, cocos2d::Node *farStars, cocos2d::Node *midStars, cocos2d::Node *nearStars, cocos2d::Node *planet)
 {
 	rotatingLeft = rotatingRight = propellingForward = false;
 	worldX = worldY = 0;
@@ -17,6 +17,7 @@ Ship::Ship(cocos2d::Label *lblCoords, cocos2d::Node *farStars, cocos2d::Node *mi
 	this->starLayers[0] = farStars;
 	this->starLayers[1] = midStars;
 	this->starLayers[2] = nearStars;
+	this->planet = planet;
 	this->initWithFile("Ship.png");
 	this->scheduleUpdate();
 
@@ -84,9 +85,21 @@ void Ship::update(float delta)
 		this->initWithFile("Ship.png");
 	}
 
+	// Gravity from the planet follows the inverse-square law. Surface gravity is 9.81 m/s^2, which is 0.001463 px/s^2 at this scale (1 px = 6,706 m).
+	const float surfaceGravity = 0.001463f;
+	float dx = (float)PLANET_CENTER_X - worldX;
+	float dy = (float)PLANET_CENTER_Y - worldY;
+	float dist = sqrt(dx * dx + dy * dy);
+	float gravity = surfaceGravity * (float)PLANET_RADIUS * PLANET_RADIUS / (dist * dist);
+	velX += gravity * dx / dist * delta;
+	velY += gravity * dy / dist * delta;
+
 	// Momentum: the ship keeps moving at its stored velocity when thrust is off.
 	worldX += velX * delta;
 	worldY += velY * delta;
+	// The planet is fixed in world space, so its drawn position moves opposite to the ship.
+	cocos2d::Vec2 shipHome = this->getPosition();
+	this->planet->setPosition(shipHome.x + PLANET_CENTER_X - worldX, shipHome.y + PLANET_CENTER_Y - worldY);
 	float tile = (float)STAR_TILE_SIZE;
 	// Each layer scrolls at a fraction of the ship's movement, so nearer stars appear to move faster.
 	const float parallax[3] = { 0.25f, 0.5f, 1.0f };
@@ -97,7 +110,9 @@ void Ship::update(float delta)
 	}
 
 	speed = sqrt(velX * velX + velY * velY);
-	std::ostringstream os;
-	os << "x: " << (int)worldX << ", y: " << (int)worldY << ", speed: " << (int)speed;
-	this->lblCoords->setString(os.str());
+	// Readouts are updated individually below.
+	if (lblX) lblX->setString(std::to_string((int)worldX));
+	if (lblY) lblY->setString(std::to_string((int)worldY));
+	if (lblSpeed) lblSpeed->setString(std::to_string((int)speed));
+	(void)lblCoords;
 }
