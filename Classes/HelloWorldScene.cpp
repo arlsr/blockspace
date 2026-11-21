@@ -1,7 +1,53 @@
 #include "HelloWorldScene.h"
+#include "EarthNode.h"
+#include "Satellite.h"
+#include <vector>
 #include <sstream>
+#include <random>
+#include <cmath>
 
 USING_NS_CC;
+
+// Redraws the starfield so it covers the visible area at the given zoom. Stars thin out as the view zooms out.
+// The layout uses a fixed seed, so it stays the same at every zoom level.
+static void buildStarfield(DrawNode* layers[3], float scale, Vec2 worldPos, Vec2 origin, Size size)
+{
+	const int tile = Ship::STAR_TILE_SIZE;
+	const int layerStars[3] = { 120, 80, 40 };
+	const float layerRadius[3] = { 0.4f, 0.7f, 1.1f };
+	float frac = scale >= 0.5f ? 1.0f : (scale / 0.5f) * (scale / 0.5f);
+	float ax = (origin.x - worldPos.x) / scale;
+	float ay = (origin.y - worldPos.y) / scale;
+	float bx = (origin.x + size.width - worldPos.x) / scale;
+	float by = (origin.y + size.height - worldPos.y) / scale;
+	int kx0 = (int)floor(ax / tile) - 2, kx1 = (int)ceil(bx / tile) + 2;
+	int ky0 = (int)floor(ay / tile) - 2, ky1 = (int)ceil(by / tile) + 2;
+	for (int layer = 0; layer < 3; ++layer) {
+		layers[layer]->clear();
+	}
+	// Too many tiles to draw: the view is zoomed out so far that the stars are sub-pixel. Leave the layers empty.
+	if ((kx1 - kx0 + 1) * (ky1 - ky0 + 1) > 600) {
+		return;
+	}
+	std::mt19937 rng(1234);
+	for (int layer = 0; layer < 3; ++layer) {
+		int keep = (int)ceil(layerStars[layer] * frac);
+		for (int i = 0; i < layerStars[layer]; ++i) {
+			float x = (float)(rng() % tile);
+			float y = (float)(rng() % tile);
+			float radius = layerRadius[layer] * (0.5f + (rng() % 100) / 100.0f);
+			float brightness = 0.5f + (rng() % 50) / 100.0f;
+			if (i >= keep) {
+				continue;
+			}
+			for (int kx = kx0; kx <= kx1; ++kx) {
+				for (int ky = ky0; ky <= ky1; ++ky) {
+					layers[layer]->drawDot(Vec2(x + kx * tile, y + ky * tile), radius, Color4F(1.0f, 1.0f, 1.0f, brightness));
+				}
+			}
+		}
+	}
+}
 
 Scene* HelloWorld::createScene()
 {
@@ -110,6 +156,10 @@ bool HelloWorld::init()
 	// Readouts were positioned above.
 	// Readouts were added above.
 
+	// World node holds the stars, planet and ship. Zoom scales only this node.
+	auto world = Node::create();
+	this->addChild(world, 0);
+
 	// Three star layers at different depths. Each scrolls at a different fraction of the ship's movement.
 	auto farStars = DrawNode::create();
 	auto midStars = DrawNode::create();
@@ -130,11 +180,11 @@ bool HelloWorld::init()
 				}
 			}
 		}
-		this->addChild(layers[layer], layer - 4);
+		world->addChild(layers[layer], layer - 4);
 	}
 
 	// Earth scaled to a 100-mile ship (1 px = 6,706 m): radius 950 px, drawn in world coordinates.
-	auto planet = DrawNode::create();
+	auto planet = EarthNode::create();
 	planet->drawSolidCircle(Vec2::ZERO, Ship::PLANET_RADIUS + 20, 0, 180, Color4F(0.5f, 0.8f, 1.0f, 0.25f));
 	planet->drawSolidCircle(Vec2::ZERO, Ship::PLANET_RADIUS, 0, 360, Color4F(0.1f, 0.35f, 0.7f, 1.0f));
 	// Real country outlines, projected onto the visible hemisphere by /tmp/make_earth.py.
@@ -143,11 +193,19 @@ bool HelloWorld::init()
 	std::istringstream mapStream(mapData);
 	std::string kind;
 	const float R = (float)Ship::PLANET_RADIUS;
+	std::vector<V2F_C4B_T2F> corners;
 	while (mapStream >> kind) {
 		if (kind == "T") {
-			float r, g, b, x1, y1, x2, y2, x3, y3;
-			mapStream >> r >> g >> b >> x1 >> y1 >> x2 >> y2 >> x3 >> y3;
-			planet->drawTriangle(Vec2(x1 * R, y1 * R), Vec2(x2 * R, y2 * R), Vec2(x3 * R, y3 * R), Color4F(r, g, b, 1.0f));
+			float c[9], x[3], y[3];
+			for (float &v : c) {
+				mapStream >> v;
+			}
+			for (int i = 0; i < 3; i++) {
+				mapStream >> x[i] >> y[i];
+			}
+			for (int i = 0; i < 3; i++) {
+				corners.push_back(V2F_C4B_T2F{Vec2(x[i] * R, y[i] * R), Color4B(Color4F(c[i * 3], c[i * 3 + 1], c[i * 3 + 2], 1.0f)), Tex2F(0.0f, 0.0f)});
+			}
 		}
 		
 	}
@@ -155,7 +213,10 @@ bool HelloWorld::init()
 	
 	
 	
-	this->addChild(planet, -1);
+	planet->addColouredTriangles(corners);
+	world->addChild(planet, -1);
+	// About 11,000 active satellites, split across orbit types (see SatellitePopulation.cpp).
+	Satellite::populate(planet, 11000);
 
 	auto ship = new Ship(this->lblCoords, farStars, midStars, nearStars, planet);
     ship->setReadouts(readouts[0], readouts[1], readouts[2]);
@@ -164,7 +225,37 @@ bool HelloWorld::init()
     ship->setPosition(Vec2(visibleSize.width/2 + origin.x, visibleSize.height/2 + origin.y));
 
     // add the sprite as a child to this layer
-    this->addChild(ship, 0);
+    world->addChild(ship, 0);
+
+    {
+        DrawNode* ls[3] = { farStars, midStars, nearStars };
+        buildStarfield(ls, 1.0f, Vec2::ZERO, origin, visibleSize);
+    }
+
+    // Minus zooms out, plus zooms in. Scaling is about the screen centre, so the ship stays in place.
+    Vec2 screenCentre(origin.x + visibleSize.width / 2, origin.y + visibleSize.height / 2);
+    auto zoomListener = EventListenerKeyboard::create();
+    zoomListener->onKeyPressed = [world, ship, screenCentre, origin, visibleSize, farStars, midStars, nearStars](EventKeyboard::KeyCode key, Event*) {
+        float s = world->getScale();
+        if (key == EventKeyboard::KeyCode::KEY_MINUS || key == EventKeyboard::KeyCode::KEY_KP_MINUS) {
+            s /= 1.25f;
+        } else if (key == EventKeyboard::KeyCode::KEY_EQUAL || key == EventKeyboard::KeyCode::KEY_KP_PLUS) {
+            s *= 1.25f;
+        } else {
+            return;
+        }
+        s = s > 4.0f ? 4.0f : s;
+        if (s < 0.0001f) {
+            s = 0.0001f;
+        }
+        world->setScale(s);
+        // The ship shrinks with zoom when zoomed out, but stops at half its default on-screen size.
+        ship->setScale(s < 1.0f ? (s < 0.5f ? 0.5f / s : 1.0f) : 1.0f);
+        world->setPosition(screenCentre * (1.0f - s));
+        DrawNode* ls[3] = { farStars, midStars, nearStars };
+        buildStarfield(ls, s, world->getPosition(), origin, visibleSize);
+    };
+    _eventDispatcher->addEventListenerWithSceneGraphPriority(zoomListener, this);
     
     return true;
 }
