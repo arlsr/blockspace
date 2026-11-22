@@ -19,6 +19,11 @@ Ship::Ship(cocos2d::Label *lblCoords, cocos2d::Node *farStars, cocos2d::Node *mi
 	this->starLayers[2] = nearStars;
 	this->planet = planet;
 	this->initWithFile("Ship.png");
+	this->setAnchorPoint(cocos2d::Vec2(0.5f, 0.5f));
+	retroFlame = cocos2d::DrawNode::create();
+	// Ring centred on the hull's drawn centre, which sits up and right of the node origin.
+	retroFlame->setPosition(cocos2d::Vec2(4.42f, 4.13f));
+	this->addChild(retroFlame, -1);
 	this->scheduleUpdate();
 
 	this->lblCoords->setString("init");
@@ -44,6 +49,8 @@ void Ship::onKeyPressed(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event*
 		this->rotatingRight = true;
 	else if (keyCode == cocos2d::EventKeyboard::KeyCode::KEY_UP_ARROW)
 		this->propellingForward = true;
+	else if (keyCode == cocos2d::EventKeyboard::KeyCode::KEY_DOWN_ARROW)
+		this->retroBraking = true;
 }
 
 void Ship::onKeyReleased(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event* event)
@@ -54,6 +61,8 @@ void Ship::onKeyReleased(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event
 		this->rotatingRight = false;
 	else if (keyCode == cocos2d::EventKeyboard::KeyCode::KEY_UP_ARROW)
 		this->propellingForward = false;
+	else if (keyCode == cocos2d::EventKeyboard::KeyCode::KEY_DOWN_ARROW)
+		this->retroBraking = false;
 }
 
 void Ship::stepForward(float delta)
@@ -61,15 +70,117 @@ void Ship::stepForward(float delta)
 	float rotationRadians = this->getRotation() * (M_PI / 180);
 
 	// Thrust accelerates the ship along its heading. The velocity is kept when thrust stops.
-	const float thrust = 10.0f;
+	// Ignition gives ten times the normal thrust, fading back to 10 px/s² over roughly a second.
+	const float thrust = 10.0f * (1.0f + 9.0f * expf(-boostTime / 0.4f));
+	// Two rings per ignition, spawned at 0 s and 0.5 s, at the ship's world position.
+	if (shockSpawned < 2 && boostTime >= shockSpawned * 0.5f) {
+		// Thruster sits behind the hull centre (about 6 px back along the hull's own axis), so offset from the ship's origin and rotate with the ship.
+		const float tlx = 0.0f, tly = -6.0f;
+		const float tailX = tlx * cos(rotationRadians) + tly * sin(rotationRadians);
+		const float tailY = -tlx * sin(rotationRadians) + tly * cos(rotationRadians);
+		shockX[shockNext] = worldX + tailX;
+		shockY[shockNext] = worldY + tailY;
+		shockBorn[shockNext] = shockClock;
+		shockNext = (shockNext + 1) % 6;
+		shockSpawned++;
+	}
+	boostTime += delta;
 	// Sin and cos are swapped because cocos2d uses a different corner for 0,0 than other libraries.
 	velX += sin(rotationRadians) * thrust * delta;
 	velY += cos(rotationRadians) * thrust * delta;
 }
 
 
+void Ship::brakeRetro(float delta)
+{
+	// Retro braking removes a share of the speed each second: fast at high speed, gentler below 30 px/s.
+	const float thrust = 10.0f;
+	float sp = sqrt(velX * velX + velY * velY);
+	// Below 2 px/s the ship stops at once rather than decaying.
+	if (sp < 2.0f) {
+		velX = velY = 0;
+		retroFiring = true;
+		return;
+	}
+	// Never apply more change than the current speed, so the ship stops at zero and does not reverse.
+	// Above 30 px/s braking is a share of speed; below 30 px/s it is a constant 20 px/s per second.
+	float dv = sp >= 30.0f ? 0.8f * sp * delta : 20.0f * delta;
+	if (dv > sp) {
+		dv = sp;
+	}
+	velX -= velX / sp * dv;
+	velY -= velY / sp * dv;
+	if (dv >= sp) {
+		velX = velY = 0;
+	}
+	retroFiring = true;
+}
+
+void Ship::updateRetroFlame()
+{
+	retroFlame->clear();
+	// Shock rings are fixed in world space. They are drawn on a child of the planet, in planet-local coordinates.
+	if (!shockFx) {
+		shockFx = cocos2d::DrawNode::create();
+		planet->addChild(shockFx, 1);
+	}
+	shockFx->clear();
+	const int disc = 16;
+	const float tau = (float)M_PI * 2.0f;
+	for (int n = 0; n < 6; ++n) {
+		float age = shockClock - shockBorn[n];
+		if (age < 0.0f || age > 1.2f) {
+			continue;
+		}
+		float p = age / 1.2f;
+		float r = 3.0f + p * 12.0f;
+		float w = 0.8f;
+		cocos2d::Vec2 c(shockX[n] - PLANET_CENTER_X, shockY[n] - PLANET_CENTER_Y);
+		cocos2d::Color4F ringCol(1.0f, 0.6f, 0.25f, 0.7f * (1.0f - p));
+		for (int i = 0; i < disc; ++i) {
+			float a0 = (float)i / disc * tau, a1 = (float)(i + 1) / disc * tau;
+			cocos2d::Vec2 d0(cos(a0), sin(a0)), d1(cos(a1), sin(a1));
+			shockFx->drawTriangle(c + d0 * (r - w), c + d0 * (r + w), c + d1 * (r + w), ringCol);
+			shockFx->drawTriangle(c + d0 * (r - w), c + d1 * (r + w), c + d1 * (r - w), ringCol);
+		}
+	}
+	bool firing = retroFiring;
+	retroFiring = false;
+	if (!firing) {
+		return;
+	}
+	// The ring expands outward from the hull and fades, then repeats.
+	const int segments = 72;
+	const float baseRadius = 20.0f;
+	const float maxGrow = 14.0f;
+	const float period = 40.0f;
+	float p = fmod(cocos2d::Director::getInstance()->getTotalFrames() / period, 1.0f);
+	float r = baseRadius + p * maxGrow;
+	cocos2d::Color4F col(0.45f, 0.55f, 0.65f, 0.6f * (1.0f - p));
+	// Arc centred on the direction of travel, in the ship's own frame. Rotation is clockwise, so add it back to the world angle.
+	float travel = atan2f(velY, velX) + getRotation() * (float)M_PI / 180.0f;
+	if (velX == 0 && velY == 0) {
+		travel = (float)M_PI / 2.0f;
+	}
+	const float arcHalf = 1.05f; // 60 degrees either side, so the arc spans 120 degrees.
+	cocos2d::Vec2 prevOuter, prevInner;
+	for (int i = 0; i <= segments; ++i) {
+		float t = travel - arcHalf + (float)i / segments * 2.0f * arcHalf;
+		cocos2d::Vec2 dir(cos(t), sin(t));
+		cocos2d::Vec2 outer = dir * (r + 1.5f);
+		cocos2d::Vec2 inner = dir * (r - 1.5f);
+		if (i > 0) {
+			retroFlame->drawTriangle(prevOuter, prevInner, outer, col);
+			retroFlame->drawTriangle(prevInner, inner, outer, col);
+		}
+		prevOuter = outer;
+		prevInner = inner;
+	}
+}
+
 void Ship::update(float delta)
 {
+	shockClock += delta;
 	if (rotatingLeft) {
 		this->setRotation(this->getRotation() - (100 * delta));
 	}
@@ -88,6 +199,12 @@ void Ship::update(float delta)
 	}
 	if (propellingForward) {
 		stepForward(delta);
+	} else {
+		boostTime = 0.0f;
+		shockSpawned = 0;
+	}
+	if (retroBraking) {
+		brakeRetro(delta);
 	}
 
 	// Gravity from the planet follows the inverse-square law. Surface gravity is 9.81 m/s^2, which is 0.001463 px/s^2 at this scale (1 px = 6,706 m).
@@ -115,6 +232,7 @@ void Ship::update(float delta)
 	}
 
 	speed = sqrt(velX * velX + velY * velY);
+	updateRetroFlame();
 	// Readouts are updated individually below.
 	if (lblX) lblX->setString(std::to_string((int)worldX));
 	if (lblY) lblY->setString(std::to_string((int)worldY));

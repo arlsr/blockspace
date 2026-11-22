@@ -11,9 +11,21 @@ private:
 	cocos2d::Label *lblX = nullptr, *lblY = nullptr, *lblSpeed = nullptr;
 	cocos2d::Texture2D *texShip = nullptr, *texShipFwd = nullptr;
 	bool thrustShown = false;
+	float boostTime = 0.0f;
+	// Shock rings are stored in world coordinates when they are created and drawn on the planet.
+	float shockX[6] = {};
+	float shockY[6] = {};
+	float shockBorn[6] = {-100.0f, -100.0f, -100.0f, -100.0f, -100.0f, -100.0f};
+	int shockSpawned = 0;
+	int shockNext = 0;
+	float shockClock = 0.0f;
+	cocos2d::DrawNode *shockFx = nullptr;
 	bool rotatingLeft;
 	bool rotatingRight;
 	bool propellingForward;
+	bool retroBraking = false;
+	bool retroFiring = false;
+	cocos2d::DrawNode *retroFlame = nullptr;
 	float speed;
 	float velX;
 	float velY;
@@ -30,5 +42,7 @@ public:
 	void onKeyPressed(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event * event);
 	void onKeyReleased(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event * event);
 	void stepForward(float delta);
+	void brakeRetro(float delta);
+	void updateRetroFlame();
 	void update(float delta) override;
 };
