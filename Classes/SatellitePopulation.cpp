@@ -54,10 +54,52 @@ Satellite* createEllipticalSatellite()
 	return Satellite::create(a, e, 63.4f * PI / 180.0f, 270.0f * PI / 180.0f, randomAngle());
 }
 
+// The Moon: circular, 384,400 km, 5.14 degrees to the ecliptic. It is drawn as a disc of 1,737 km radius with near-side maria, craters and limb darkening, with the sprite hidden.
+Satellite* createMoon()
+{
+	Satellite* moon = Satellite::create(kmToPixels(384400.0f), 0.0f, 5.14f * PI / 180.0f, 0.0f, 0.0f);
+	if (!moon) {
+		return nullptr;
+	}
+	moon->setOpacity(0);
+	auto disc = cocos2d::DrawNode::create();
+	const float R = kmToPixels(1737.4f);
+	// Positions below are fractions of the radius, with x to the right and y up.
+	auto P = [R](float x, float y) { return cocos2d::Vec2(x * R, y * R); };
+	const int seg = 180;
+	// Highlands: light grey base, darker towards the limb so the disc reads as a sphere.
+	disc->drawSolidCircle(cocos2d::Vec2::ZERO, R, 0.0f, seg, cocos2d::Color4F(0.50f, 0.49f, 0.47f, 1.0f));
+	disc->drawSolidCircle(cocos2d::Vec2::ZERO, R * 0.97f, 0.0f, seg, cocos2d::Color4F(0.60f, 0.59f, 0.57f, 1.0f));
+	disc->drawSolidCircle(cocos2d::Vec2::ZERO, R * 0.85f, 0.0f, seg, cocos2d::Color4F(0.70f, 0.69f, 0.67f, 1.0f));
+	// Maria: dark basalt plains on the near side.
+	const cocos2d::Color4F mare(0.36f, 0.36f, 0.36f, 1.0f);
+	disc->drawSolidCircle(P(-0.50f, 0.20f), R * 0.38f, 0.0f, seg, mare); // Oceanus Procellarum
+	disc->drawSolidCircle(P(-0.38f, 0.55f), R * 0.20f, 0.0f, seg, mare); // Mare Imbrium
+	disc->drawSolidCircle(P(0.12f, 0.45f), R * 0.14f, 0.0f, seg, mare); // Mare Serenitatis
+	disc->drawSolidCircle(P(0.30f, 0.15f), R * 0.16f, 0.0f, seg, mare); // Mare Tranquillitatis
+	disc->drawSolidCircle(P(0.60f, 0.40f), R * 0.10f, 0.0f, seg, mare); // Mare Crisium
+	disc->drawSolidCircle(P(0.55f, -0.10f), R * 0.14f, 0.0f, seg, mare); // Mare Fecunditatis
+	disc->drawSolidCircle(P(0.30f, -0.25f), R * 0.08f, 0.0f, seg, mare); // Mare Nectaris
+	disc->drawSolidCircle(P(0.00f, -0.45f), R * 0.16f, 0.0f, seg, mare); // Mare Nubium
+	disc->drawSolidCircle(P(-0.45f, -0.25f), R * 0.10f, 0.0f, seg, mare); // Mare Humorum
+	disc->drawSolidCircle(P(-0.10f, 0.85f), R * 0.08f, 0.0f, seg, mare); // Mare Frigoris, near the top limb
+	// Craters: a bright central peak on a dark floor, and Tycho as a plain crater.
+	disc->drawSolidCircle(P(-0.18f, 0.12f), R * 0.05f, 0.0f, 60, cocos2d::Color4F(0.30f, 0.30f, 0.30f, 1.0f)); // Copernicus floor
+	disc->drawSolidCircle(P(-0.18f, 0.12f), R * 0.015f, 0.0f, 24, cocos2d::Color4F(0.85f, 0.84f, 0.82f, 1.0f));
+	const cocos2d::Vec2 tycho = P(0.02f, -0.72f);
+	disc->drawSolidCircle(tycho, R * 0.04f, 0.0f, 60, cocos2d::Color4F(0.45f, 0.45f, 0.44f, 1.0f));
+	moon->addChild(disc);
+	return moon;
+}
+
 }  // namespace
 
 void Satellite::populate(cocos2d::Node* planet, int count)
 {
+	// The Moon is always added, on its own orbit.
+	if (Satellite* moon = createMoon()) {
+		planet->addChild(moon);
+	}
 	// Shares are approximate proportions of the real active satellite population.
 	for (int n = 0; n < count; ++n) {
 		float roll = randomUnit();

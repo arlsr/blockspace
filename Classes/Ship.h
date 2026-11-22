@@ -20,6 +20,12 @@ private:
 	int shockNext = 0;
 	float shockClock = 0.0f;
 	cocos2d::DrawNode *shockFx = nullptr;
+	cocos2d::DrawNode *sunFx = nullptr;
+	// Earth's position and velocity in simulation coordinates. Earth orbits the fixed Sun.
+	float earthX = 0.0f;
+	float earthY = -1000.0f;
+	float earthVX = 0.0f;
+	float earthVY = 4.4413f;
 	bool rotatingLeft;
 	bool rotatingRight;
 	bool propellingForward;

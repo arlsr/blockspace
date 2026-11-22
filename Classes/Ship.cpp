@@ -65,13 +65,23 @@ void Ship::onKeyReleased(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event
 		this->retroBraking = false;
 }
 
+// Acceleration grows as the view zooms out (1/zoom), so distant travel is quick. Zooming in keeps the normal rate.
+static float accelMultiplier(const cocos2d::Node* world)
+{
+	float zoom = world ? world->getScaleX() : 1.0f;
+	float mul = 1.0f / zoom;
+	if (mul < 1.0f) mul = 1.0f;
+	if (mul > 10000.0f) mul = 10000.0f;
+	return mul;
+}
+
 void Ship::stepForward(float delta)
 {
 	float rotationRadians = this->getRotation() * (M_PI / 180);
 
 	// Thrust accelerates the ship along its heading. The velocity is kept when thrust stops.
 	// Ignition gives ten times the normal thrust, fading back to 10 px/s² over roughly a second.
-	const float thrust = 10.0f * (1.0f + 9.0f * expf(-boostTime / 0.4f));
+	const float thrust = accelMultiplier(this->getParent()) * 10.0f * (1.0f + 9.0f * expf(-boostTime / 0.4f));
 	// Two rings per ignition, spawned at 0 s and 0.5 s, at the ship's world position.
 	if (shockSpawned < 2 && boostTime >= shockSpawned * 0.5f) {
 		// Thruster sits behind the hull centre (about 6 px back along the hull's own axis), so offset from the ship's origin and rotate with the ship.
@@ -104,7 +114,7 @@ void Ship::brakeRetro(float delta)
 	}
 	// Never apply more change than the current speed, so the ship stops at zero and does not reverse.
 	// Above 30 px/s braking is a share of speed; below 30 px/s it is a constant 20 px/s per second.
-	float dv = sp >= 30.0f ? 0.8f * sp * delta : 20.0f * delta;
+	float dv = sp >= 30.0f ? 0.8f * sp * delta : 20.0f * accelMultiplier(this->getParent()) * delta;
 	if (dv > sp) {
 		dv = sp;
 	}
@@ -135,7 +145,7 @@ void Ship::updateRetroFlame()
 		float p = age / 1.2f;
 		float r = 3.0f + p * 12.0f;
 		float w = 0.8f;
-		cocos2d::Vec2 c(shockX[n] - PLANET_CENTER_X, shockY[n] - PLANET_CENTER_Y);
+		cocos2d::Vec2 c(shockX[n] - earthX, shockY[n] - earthY);
 		cocos2d::Color4F ringCol(1.0f, 0.6f, 0.25f, 0.7f * (1.0f - p));
 		for (int i = 0; i < disc; ++i) {
 			float a0 = (float)i / disc * tau, a1 = (float)(i + 1) / disc * tau;
@@ -209,8 +219,8 @@ void Ship::update(float delta)
 
 	// Gravity from the planet follows the inverse-square law. Surface gravity is 9.81 m/s^2, which is 0.001463 px/s^2 at this scale (1 px = 6,706 m).
 	const float surfaceGravity = 0.001463f;
-	float dx = (float)PLANET_CENTER_X - worldX;
-	float dy = (float)PLANET_CENTER_Y - worldY;
+	float dx = earthX - worldX;
+	float dy = earthY - worldY;
 	float dist = sqrt(dx * dx + dy * dy);
 	float gravity = surfaceGravity * (float)PLANET_RADIUS * PLANET_RADIUS / (dist * dist);
 	velX += gravity * dx / dist * delta;
@@ -221,7 +231,31 @@ void Ship::update(float delta)
 	worldY += velY * delta;
 	// The planet is fixed in world space, so its drawn position moves opposite to the ship.
 	cocos2d::Vec2 shipHome = this->getPosition();
-	this->planet->setPosition(shipHome.x + PLANET_CENTER_X - worldX, shipHome.y + PLANET_CENTER_Y - worldY);
+	// Earth orbits the fixed Sun under inverse-square gravity. The Sun is 1 AU (about 22,308,380 px) to the left, and Earth moves at about 4.44 px/s (about 30 km/s).
+	const float sunX = -22308380.0f;
+	const float sunY = -1000.0f;
+	const float gmSun = 4.4003e8f;
+	float sdx = sunX - earthX;
+	float sdy = sunY - earthY;
+	float sdist = sqrt(sdx * sdx + sdy * sdy);
+	float sunPull = gmSun / (sdist * sdist);
+	earthVX += sunPull * sdx / sdist * delta;
+	earthVY += sunPull * sdy / sdist * delta;
+	earthX += earthVX * delta;
+	earthY += earthVY * delta;
+	this->planet->setPosition(shipHome.x + earthX - worldX, shipHome.y + earthY - worldY);
+	// The Sun is fixed in world space, drawn once on the world node. Its radius is 696,000 km (about 103,787 px).
+	if (!sunFx) {
+		const float sunRadius = 103787.0f;
+		const cocos2d::Vec2 sunCentre(0.0f, 0.0f);
+		sunFx = cocos2d::DrawNode::create();
+		// Faint outer halo first, then the disc on top.
+		sunFx->drawSolidCircle(sunCentre, sunRadius * 1.25f, 0.0f, 720, cocos2d::Color4F(1.0f, 0.85f, 0.4f, 0.05f));
+		sunFx->drawSolidCircle(sunCentre, sunRadius * 1.08f, 0.0f, 720, cocos2d::Color4F(1.0f, 0.9f, 0.5f, 0.12f));
+		sunFx->drawSolidCircle(sunCentre, sunRadius, 0.0f, 720, cocos2d::Color4F(1.0f, 0.93f, 0.6f, 1.0f));
+		this->planet->getParent()->addChild(sunFx, -1);
+	}
+	sunFx->setPosition(shipHome.x + sunX - worldX, shipHome.y + sunY - worldY);
 	float tile = (float)STAR_TILE_SIZE;
 	// Each layer scrolls at a fraction of the ship's movement, so nearer stars appear to move faster.
 	const float parallax[3] = { 0.25f, 0.5f, 1.0f };
