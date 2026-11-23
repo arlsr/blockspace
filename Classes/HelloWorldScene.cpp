@@ -1,6 +1,7 @@
 #include "HelloWorldScene.h"
 #include "EarthNode.h"
 #include "Satellite.h"
+#include "AlienFleet.h"
 #include <vector>
 #include <sstream>
 #include <random>
@@ -226,6 +227,9 @@ bool HelloWorld::init()
 
     // add the sprite as a child to this layer
     world->addChild(ship, 0);
+
+    // Alien saucers ride on Earth's node, so they follow the planet's motion and share its coordinates.
+    planet->addChild(AlienFleet::create(planet, ship, visibleSize.height), 2);
 
     {
         DrawNode* ls[3] = { farStars, midStars, nearStars };
