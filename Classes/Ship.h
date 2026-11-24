@@ -51,4 +51,8 @@ public:
 	void brakeRetro(float delta);
 	void updateRetroFlame();
 	void update(float delta) override;
+	// Ship state for the fleet, relative to Earth's centre: position (px), velocity (px/s), and the unit nose direction.
+	cocos2d::Vec2 relativePos() const { return cocos2d::Vec2(worldX - earthX, worldY - earthY); }
+	cocos2d::Vec2 relativeVel() const { return cocos2d::Vec2(velX - earthVX, velY - earthVY); }
+	cocos2d::Vec2 noseDirection() const { const float r = getRotation() * (float)M_PI / 180.0f; return cocos2d::Vec2(sinf(r), cosf(r)); }
 };

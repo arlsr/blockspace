@@ -229,7 +229,8 @@ bool HelloWorld::init()
     world->addChild(ship, 0);
 
     // Alien saucers ride on Earth's node, so they follow the planet's motion and share its coordinates.
-    planet->addChild(AlienFleet::create(planet, ship, visibleSize.height), 2);
+    AlienFleet* fleet = AlienFleet::create(planet, ship, visibleSize.height);
+    planet->addChild(fleet, 2);
 
     {
         DrawNode* ls[3] = { farStars, midStars, nearStars };
@@ -239,7 +240,8 @@ bool HelloWorld::init()
     // Minus zooms out, plus zooms in. Scaling is about the screen centre, so the ship stays in place.
     Vec2 screenCentre(origin.x + visibleSize.width / 2, origin.y + visibleSize.height / 2);
     auto zoomListener = EventListenerKeyboard::create();
-    zoomListener->onKeyPressed = [world, ship, screenCentre, origin, visibleSize, farStars, midStars, nearStars](EventKeyboard::KeyCode key, Event*) {
+    zoomListener->onKeyPressed = [world, ship, screenCentre, origin, visibleSize, farStars, midStars, nearStars, fleet](EventKeyboard::KeyCode key, Event*) {
+        fleet->onKey(key);
         float s = world->getScale();
         if (key == EventKeyboard::KeyCode::KEY_MINUS || key == EventKeyboard::KeyCode::KEY_KP_MINUS) {
             s /= 1.25f;

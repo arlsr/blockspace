@@ -1,8 +1,26 @@
 #include "AlienFleet.h"
+#include "Ship.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+
+namespace {
+const float kTrackScreens = 2.0f;          // sensor range for tracking raiders, in screens
+const float kMissileLaunchSpeed = 900.0f;  // muzzle speed relative to the ship, px/s
+const float kMissileCoastScreens = 0.3f;   // distance flown before the thrusters light
+const float kMissileThrust = 700.0f;       // homing acceleration, px/s^2
+const float kMissileMaxSpeed = 1600.0f;    // speed cap, px/s
+const float kMissileLife = 5.0f;          // seconds before it burns out
+const float kMissileHitRadius = 9.0f;      // px
+const float kBlastLife = 1.6f;
+const float kAlienBurnTime = 3.0f;        // seconds a raider burns before it falls
+const float kShipBurnTime = 8.0f;         // seconds the player's ship burns             // seconds
+}
 #include "base/CCDirector.h"
 #include "2d/CCLabel.h"
 #include "Ship.h"
 #include "platform/CCFileUtils.h"
+#include "audio/include/AudioEngine.h"
 #include <new>
 #include <sstream>
 #include <cmath>
@@ -11,6 +29,21 @@ USING_NS_CC;
 
 namespace {
 // Bolts that miss their target stop after this many screen heights of flight (2.0 * _screenH).
+constexpr float kMissileBoostTime = 0.25f; // seconds of high launch speed before the missile drops to cruise speed
+constexpr float kMissileCruiseSpeed = 50.0f; // speed a missile settles to after the boost
+constexpr float kMissileDecelSpeed = 200.0f; // speed a missile is at when the boost ends
+constexpr float kMissileDecelTime = 4.0f; // seconds to slow from the boost-end speed down to the cruise speed
+
+// Missile speed profile: 900 px/s down to 200 px/s over the boost, then gradually down to 50 px/s.
+static float missileSpeedAt(float age)
+{
+    if (age < kMissileBoostTime) {
+        return kMissileDecelSpeed + (kMissileLaunchSpeed - kMissileDecelSpeed) * (1.0f - age / kMissileBoostTime);
+    }
+    const float t = std::min(1.0f, (age - kMissileBoostTime) / kMissileDecelTime);
+    return kMissileDecelSpeed + (kMissileCruiseSpeed - kMissileDecelSpeed) * t;
+}
+constexpr float kLaunchSkipSeconds = 1.0f; // silent lead-in of the launch woosh, skipped so it sounds at once
 constexpr float kBoltMaxScreens = 1.0f;       // ship-aimed bolts that miss
 constexpr float kLandBoltMaxScreens = 2.0f;   // land-aimed bolts, twice the ship-bolt range
 constexpr size_t kMaxAliens = 20;             // no new raiders spawn once this many are alive
@@ -36,6 +69,10 @@ bool AlienFleet::initFleet(Node* planet, Node* ship, float screenHeight)
     _ship = ship;
     _screenH = screenHeight;
     _rng.seed(4321);
+    // Load the sounds now so the first press plays at once instead of decoding the file.
+    AudioEngine::preload("sfx/freesound/missile_launch_woosh.mp3");
+    AudioEngine::preload("sfx/kenney/alien_pew.ogg");
+    AudioEngine::preload("sfx/kenney/missile_explosion.ogg");
 
     _scorch = DrawNode::create();
     addChild(_scorch, 0);
@@ -88,6 +125,7 @@ bool AlienFleet::initFleet(Node* planet, Node* ship, float screenHeight)
         a.fireTimer = 1.5f + 0.5f * i;
         a.phase = i * 2.1f;
         a.combat = false;
+        a.id = _nextId++;
         _aliens.push_back(a);
     }
     scheduleUpdate();
@@ -163,6 +201,10 @@ void AlienFleet::fireAt(const Vec2& from, const Vec2& to, bool aimedAtShip)
     b.travelled = 0.0f;
     b.aimedAtShip = aimedAtShip;
     _bolts.push_back(b);
+    // Only bolts fired within one screen of the ship are audible.
+    if (from.distance(shipLocal()) < _screenH) {
+        AudioEngine::play2d("sfx/kenney/alien_pew.ogg", false, 0.5f);
+    }
 }
 
 // A charred spot: a dark core with a faint orange rim. It stays on Earth permanently.
@@ -346,6 +388,7 @@ void AlienFleet::update(float delta)
         a.fireTimer = 1.5f;
         a.phase = phase(_rng);
         a.combat = false;
+        a.id = _nextId++;
         _aliens.push_back(a);
     }
 
@@ -386,6 +429,10 @@ void AlienFleet::update(float delta)
             ++i;
         }
     }
+    _clock += delta;
+    updateMissiles(delta);
+    updateBurning(delta);
+    updateTargeting();
     drawFleet();
 
     // Steam is white, spreads as it ages and fades to nothing over 2 s. Drawn after drawFleet, which clears _fx.
@@ -393,6 +440,7 @@ void AlienFleet::update(float delta)
         const float age = 2.0f - s.life;
         _fx->drawSolidCircle(s.pos, 2.0f + 3.0f * age, 0.0f, 16, Color4F(1.0f, 1.0f, 1.0f, 0.8f * s.life / 2.0f));
     }
+    drawEffects();
 }
 
 void AlienFleet::updateAlien(Alien &a, float delta, const Vec2 &ship)
@@ -446,6 +494,405 @@ void AlienFleet::updateAlien(Alien &a, float delta, const Vec2 &ship)
 }
 
 // Saucers are drawn about 11 px wide, the same as the player's hull at default zoom.
+int AlienFleet::indexOfAlien(int id) const
+{
+    for (size_t i = 0; i < _aliens.size(); i++) {
+        if (_aliens[i].id == id) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+// Every raider inside the sensor range is tracked, nearest first. A lock that leaves range is dropped.
+void AlienFleet::updateTargeting()
+{
+    const Vec2 ship = shipLocal();
+    const float range = kTrackScreens * _screenH;
+    std::vector<std::pair<float, int>> inRange;
+    for (const Alien &a : _aliens) {
+        const float d = a.pos.distance(ship);
+        if (d <= range) {
+            inRange.push_back({d, a.id});
+        }
+    }
+    std::sort(inRange.begin(), inRange.end());
+    _tracked.clear();
+    for (const auto &p : inRange) {
+        _tracked.push_back(p.second);
+    }
+    if (_lockId != 0 && std::find(_tracked.begin(), _tracked.end(), _lockId) == _tracked.end()) {
+        _lockId = 0;
+    }
+}
+
+// The tracked raider closest to dead ahead of the ship, found by the angle between the nose and the bearing to it.
+int AlienFleet::frontmostTracked() const
+{
+    const Vec2 ship = shipLocal();
+    const Vec2 nose = static_cast<const Ship *>(_ship)->noseDirection();
+    int best = -1;
+    float bestCos = -2.0f;
+    for (int id : _tracked) {
+        const int idx = indexOfAlien(id);
+        if (idx < 0) {
+            continue;
+        }
+        const float c = (_aliens[idx].pos - ship).getNormalized().dot(nose);
+        if (c > bestCos) {
+            bestCos = c;
+            best = id;
+        }
+    }
+    return best;
+}
+
+// Locking stamps the raider with the game time, so cycling can pick the one locked longest ago.
+void AlienFleet::setLock(int id)
+{
+    _lockId = id;
+    const int idx = indexOfAlien(id);
+    if (idx >= 0) {
+        _aliens[idx].lastLocked = _clock;
+    }
+}
+
+// Moves to the tracked raider that was locked longest ago. Never-locked raiders go first, nearest first among ties.
+void AlienFleet::cycleRaiderLock()
+{
+    int best = -1;
+    float oldest = 1.0e18f;
+    for (int id : _tracked) {
+        const int idx = indexOfAlien(id);
+        if (idx < 0) {
+            continue;
+        }
+        if (_aliens[idx].lastLocked < oldest) {
+            oldest = _aliens[idx].lastLocked;
+            best = id;
+        }
+    }
+    if (best < 0) {
+        _lockId = 0;
+    } else {
+        setLock(best);
+    }
+}
+
+void AlienFleet::onKey(EventKeyboard::KeyCode key)
+{
+    if (_doomStarted || _gameOver) {
+        return;
+    }
+    if (key == EventKeyboard::KeyCode::KEY_R) {
+        if (_tracked.empty()) {
+            _lockId = 0;
+            return;
+        }
+        // First press locks the raider nearest dead ahead. Presses while locked cycle through the rest.
+        if (_lockId != 0 && indexOfAlien(_lockId) >= 0) {
+            cycleRaiderLock();
+        } else {
+            const int front = frontmostTracked();
+            if (front < 0) {
+                _lockId = 0;
+            } else {
+                setLock(front);
+            }
+        }
+    } else if (key == EventKeyboard::KeyCode::KEY_E) {
+        if (_tracked.empty()) {
+            _lockId = 0;
+            return;
+        }
+        int idx = -1;
+        for (size_t i = 0; i < _tracked.size(); i++) {
+            if (_tracked[i] == _lockId) {
+                idx = (int)i;
+            }
+        }
+        const int n = (int)_tracked.size();
+        idx = (idx + 1) % n;
+        setLock(_tracked[idx]);
+    } else if (key == EventKeyboard::KeyCode::KEY_F) {
+        fireMissile();
+    }
+}
+
+// The missile leaves the nose at muzzle speed on top of the ship's own velocity. Its target is fixed at launch.
+void AlienFleet::fireMissile()
+{
+    const Ship *s = static_cast<const Ship *>(_ship);
+    const Vec2 nose = s->noseDirection();
+    Missile m;
+    m.pos = shipLocal() + nose * 12.0f;
+    m.vel = s->relativeVel() + nose * kMissileLaunchSpeed;
+    // With a lock the missile keeps that raider for life. Without one it heat-seeks the nearest raider.
+    m.seeker = (_lockId == 0 || indexOfAlien(_lockId) < 0);
+    m.targetId = m.seeker ? 0 : _lockId;
+    m.flown = 0.0f;
+    m.age = 0.0f;
+    _missiles.push_back(m);
+    const int sid = AudioEngine::play2d("sfx/freesound/missile_launch_woosh.mp3", false, 0.8f);
+    if (sid >= 0) {
+        AudioEngine::setCurrentTime(sid, kLaunchSkipSeconds);
+    }
+}
+
+void AlienFleet::explodeAt(const Vec2 &p, float size)
+{
+    // Every explosion makes the rumble, louder for bigger blasts.
+    AudioEngine::play2d("sfx/kenney/missile_explosion.ogg", false, std::min(1.0f, 0.5f + 0.5f * size));
+    _blasts.push_back({p, 0.0f, 75.0f * size, true});
+    std::uniform_real_distribution<float> angle(0.0f, 6.2832f);
+    std::uniform_real_distribution<float> speed(60.0f, 380.0f * size + 60.0f);
+    std::uniform_real_distribution<float> life(0.5f, 1.4f);
+    for (int i = 0; i < 48; i++) {
+        const float a = angle(_rng);
+        const Vec2 v = Vec2(cosf(a), sinf(a)) * speed(_rng);
+        _sparks.push_back({p, v, life(_rng)});
+    }
+}
+
+void AlienFleet::updateMissiles(float delta)
+{
+    const float coast = kMissileCoastScreens * _screenH;
+    for (size_t i = 0; i < _missiles.size();) {
+        Missile &m = _missiles[i];
+        m.age += delta;
+        m.flown += m.vel.length() * delta;
+        // The boost phase bleeds speed from the launch value down to 50 px/s, so the missile slows before its thrusters take over.
+        if (m.vel.lengthSquared() > 0.0f) {
+            const float target = missileSpeedAt(m.age);
+            m.vel = m.vel.getNormalized() * target;
+        }
+        // Coasts out of the ship first, then the thrusters light and steer toward the fixed target with a lead.
+        int idx = -1;
+        if (m.seeker) {
+            // Heat seeking: whichever raider is nearest to the missile right now.
+            float best = 1e30f;
+            for (size_t j = 0; j < _aliens.size(); j++) {
+                const float d = _aliens[j].pos.distance(m.pos);
+                if (d < best) {
+                    best = d;
+                    idx = (int)j;
+                }
+            }
+        } else {
+            idx = indexOfAlien(m.targetId);
+        }
+        // The thrusters stay off during the boost, so the missile is at cruise speed when they light.
+        // The thrusters burn only until the slowdown ends; after that the missile heads straight.
+        if (m.flown >= coast && m.age >= kMissileBoostTime && m.age < kMissileBoostTime + kMissileDecelTime && idx >= 0) {
+            const Alien &t = _aliens[idx];
+            const float d = t.pos.distance(m.pos);
+            const Vec2 aim = t.pos + t.vel * std::min(d / kMissileMaxSpeed, 3.0f);
+            m.vel += (aim - m.pos).getNormalized() * (kMissileThrust * delta);
+        }
+        // Speed is capped at the launch speed during the boost, then held at the cruise speed.
+        const float cap = m.age < kMissileBoostTime ? kMissileMaxSpeed : missileSpeedAt(m.age);
+        const float sp = m.vel.length();
+        if (sp > cap) {
+            m.vel *= cap / sp;
+        }
+        m.pos += m.vel * delta;
+
+        // A missile caught in another blast's shock ring detonates too.
+        bool shocked = false;
+        for (const Blast &b : _blasts) {
+            // Only things inside the fireball when it appears are affected, not ones that drive in later.
+            if (!b.fresh) {
+                continue;
+            }
+            const float reach = b.maxR * 0.9f;
+            if (m.pos.distance(b.pos) <= reach) {
+                shocked = true;
+                break;
+            }
+        }
+
+        // Collisions: any raider, the planet's surface, or burn-out.
+        int hit = -1;
+        for (size_t j = 0; j < _aliens.size(); j++) {
+            if (_aliens[j].pos.distance(m.pos) < kMissileHitRadius) {
+                hit = (int)j;
+                break;
+            }
+        }
+        bool gone = false;
+        if (hit >= 0) {
+            explodeAt(m.pos, 1.0f);
+            _aliens.erase(_aliens.begin() + hit);
+            gone = true;
+        } else if (shocked) {
+            explodeAt(m.pos, 0.8f);
+            gone = true;
+        } else if (m.age > kMissileLife) {
+            // Burn-out: steam over sea, a scorch over land, nothing in space.
+            explodeAt(m.pos, 0.6f);
+            impactAt(m.pos);
+            gone = true;
+        }
+        if (gone) {
+            _missiles[i] = _missiles.back();
+            _missiles.pop_back();
+        } else {
+            ++i;
+        }
+    }
+
+    // The fireball sets fire to anything it reaches: raiders and the player's ship.
+    const Vec2 shipPos = shipLocal();
+    for (const Blast &b : _blasts) {
+        if (!b.fresh) {
+            continue;
+        }
+        const float reach = b.maxR * 0.9f;
+        for (Alien &a : _aliens) {
+            if (a.burn <= 0.0f && a.pos.distance(b.pos) <= reach) {
+                a.burn = kAlienBurnTime;
+            }
+        }
+        if (shipPos.distance(b.pos) <= reach) {
+            _shipBurn = kShipBurnTime;
+        }
+    }
+    for (size_t i = 0; i < _blasts.size();) {
+        _blasts[i].age += delta;
+        _blasts[i].fresh = false;
+        if (_blasts[i].age >= kBlastLife) {
+            _blasts[i] = _blasts.back();
+            _blasts.pop_back();
+        } else {
+            ++i;
+        }
+    }
+    for (size_t i = 0; i < _sparks.size();) {
+        Spark &s = _sparks[i];
+        s.life -= delta;
+        s.pos += s.vel * delta;
+        s.vel *= std::max(0.0f, 1.0f - 1.2f * delta);
+        if (s.life <= 0.0f) {
+            _sparks[i] = _sparks.back();
+            _sparks.pop_back();
+        } else {
+            ++i;
+        }
+    }
+}
+
+static void drawRing(DrawNode *d, const Vec2 &c, float r, const Color4F &col)
+{
+    const int n = 40;
+    for (int i = 0; i < n; i++) {
+        const float a0 = 6.2832f * i / n;
+        const float a1 = 6.2832f * (i + 1) / n;
+        d->drawSegment(c + Vec2(cosf(a0), sinf(a0)) * r, c + Vec2(cosf(a1), sinf(a1)) * r, 1.5f, col);
+    }
+}
+
+// Flames: six flickering tongues around a burning body. Each one flickers at its own rate and the ring slowly turns.
+static void drawFlames(DrawNode *d, const Vec2 &c, float clock, float size)
+{
+    for (int i = 0; i < 6; i++) {
+        const float a = 6.2832f * i / 6.0f + clock * 3.0f;
+        const Vec2 dir(cosf(a), sinf(a));
+        const float len = size * (0.6f + 0.4f * sinf(clock * 17.0f + i * 2.3f));
+        d->drawSegment(c + dir * size * 0.4f, c + dir * (size * 0.4f + len), 1.5f, Color4F(1.0f, 0.5f, 0.1f, 0.85f));
+    }
+}
+
+// A burning raider counts down its burn and then explodes. The player's ship burns on its own timer.
+void AlienFleet::updateBurning(float delta)
+{
+    if (_shipBurn > 0.0f) {
+        _shipBurn = std::max(0.0f, _shipBurn - delta);
+    }
+    for (size_t i = 0; i < _aliens.size();) {
+        Alien &a = _aliens[i];
+        if (a.burn > 0.0f) {
+            a.burn -= delta;
+            if (a.burn <= 0.0f) {
+                explodeAt(a.pos, 0.5f);
+                _aliens.erase(_aliens.begin() + i);
+                continue;
+            }
+        }
+        ++i;
+    }
+}
+
+// Tracking brackets on every raider in range (amber), with the locked one in red. Missiles, blasts and sparks are drawn here too.
+void AlienFleet::drawEffects()
+{
+    for (int id : _tracked) {
+        const int idx = indexOfAlien(id);
+        if (idx < 0) {
+            continue;
+        }
+        const Vec2 c = _aliens[idx].pos;
+        const bool locked = (id == _lockId);
+        const Color4F col = locked ? Color4F(1.0f, 0.2f, 0.2f, 1.0f) : Color4F(1.0f, 0.75f, 0.2f, 0.9f);
+        const float h = 12.0f, L = 5.0f;
+        const float xs[4] = {-1.0f, 1.0f, 1.0f, -1.0f};
+        const float ys[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
+        for (int k = 0; k < 4; k++) {
+            const Vec2 corner = c + Vec2(xs[k] * h, ys[k] * h);
+            _fx->drawSegment(corner, corner - Vec2(xs[k] * L, 0.0f), 1.0f, col);
+            _fx->drawSegment(corner, corner - Vec2(0.0f, ys[k] * L), 1.0f, col);
+        }
+    }
+
+    // Burning raiders and the burning ship trail flames until their burn ends.
+    for (const Alien &a : _aliens) {
+        if (a.burn > 0.0f) {
+            drawFlames(_fx, a.pos, _clock, 6.0f);
+        }
+    }
+    if (_shipBurn > 0.0f) {
+        drawFlames(_fx, shipLocal(), _clock, 10.0f);
+    }
+
+    for (const Missile &m : _missiles) {
+        const Vec2 dir = m.vel.getNormalized();
+        const bool lit = m.age >= kMissileBoostTime;
+        const float tail = lit ? 7.0f : 3.0f;
+        const Color4F flame = lit ? Color4F(1.0f, 0.6f, 0.2f, 0.9f) : Color4F(0.8f, 0.8f, 0.8f, 0.6f);
+        // Once the slowdown ends the thrusters are cut, so there is no flame at all.
+        if (m.age < kMissileBoostTime + kMissileDecelTime) {
+            _fx->drawSegment(m.pos - dir * tail, m.pos, 1.0f, flame);
+        }
+        _fx->drawDot(m.pos, 2.0f, Color4F(1.0f, 1.0f, 0.9f, 1.0f));
+    }
+
+    for (const Blast &b : _blasts) {
+        const float t = b.age / kBlastLife;
+        // Flash: a white core that dies within a quarter of a second.
+        if (b.age < 0.25f) {
+            _fx->drawSolidCircle(b.pos, b.maxR * 0.5f, 0.0f, 24, Color4F(1.0f, 1.0f, 0.95f, 1.0f - b.age / 0.25f));
+        }
+        // Fireball: yellow-white cooling to dark red as it grows and fades.
+        const float fr = b.maxR * (0.3f + 0.6f * std::min(1.0f, b.age / 0.4f));
+        _fx->drawSolidCircle(b.pos, fr, 0.0f, 24, Color4F(1.0f, 0.55f - 0.4f * t, 0.1f, 0.85f * (1.0f - t)));
+        // Two shock waves, the second following the first by 0.12 s, racing well past the fireball.
+        for (int w = 0; w < 2; w++) {
+            const float a = b.age - 0.12f * w;
+            if (a <= 0.0f) {
+                continue;
+            }
+            const float r = b.maxR * 3.0f * std::min(1.0f, a / 0.9f);
+            const float alpha = std::max(0.0f, 1.0f - a / kBlastLife);
+            const Color4F ring = (w == 0) ? Color4F(0.85f, 0.95f, 1.0f, alpha) : Color4F(1.0f, 0.7f, 0.4f, 0.8f * alpha);
+            drawRing(_fx, b.pos, r, ring);
+        }
+    }
+
+    for (const Spark &s : _sparks) {
+        const float fade = std::min(1.0f, s.life);
+        _fx->drawSegment(s.pos - s.vel * 0.05f, s.pos, 1.2f, Color4F(1.0f, 0.8f * fade, 0.3f * fade, fade));
+    }
+}
+
 void AlienFleet::drawFleet()
 {
     _fx->clear();
