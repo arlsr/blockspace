@@ -32,6 +32,8 @@ private:
 	bool retroBraking = false;
 	bool retroFiring = false;
 	cocos2d::DrawNode *retroFlame = nullptr;
+	// Seconds since the last spacebar launch, or negative when no launch jet is firing.
+	float launchClock = -1.0f;
 	float speed;
 	float velX;
 	float velY;

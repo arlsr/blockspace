@@ -51,6 +51,18 @@ void Ship::onKeyPressed(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event*
 		this->propellingForward = true;
 	else if (keyCode == cocos2d::EventKeyboard::KeyCode::KEY_DOWN_ARROW)
 		this->retroBraking = true;
+	else if (keyCode == cocos2d::EventKeyboard::KeyCode::KEY_SPACE) {
+		// Rocket launch: replace all momentum and drift with a huge speed straight out of the nose.
+		const float rotationRadians = this->getRotation() * (M_PI / 180);
+		const float launchSpeed = 100.0f; // px/s, about 670 km/s at the game's scale
+		const float nx = sin(rotationRadians), ny = cos(rotationRadians);
+		// Sideways momentum is cancelled. Speed already along the nose is kept, and the boost adds to it.
+		const float along = velX * nx + velY * ny;
+		const float newAlong = (along > 0.0f ? along : 0.0f) + launchSpeed;
+		velX = nx * newAlong;
+		velY = ny * newAlong;
+		launchClock = 0.0f;
+	}
 }
 
 void Ship::onKeyReleased(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event* event)
@@ -129,6 +141,35 @@ void Ship::brakeRetro(float delta)
 void Ship::updateRetroFlame()
 {
 	retroFlame->clear();
+
+	// White-hot launch jet: three stacked tapered flames from the nozzle, fading and flickering over about 1.2 s.
+	if (launchClock >= 0.0f) {
+		launchClock += cocos2d::Director::getInstance()->getDeltaTime();
+		const float t = launchClock;
+		const float fade = fmaxf(0.0f, 1.0f - t / 0.5f);
+		if (fade <= 0.0f) {
+			launchClock = -1.0f;
+		} else {
+			// Nozzle sits 6 px behind the hull centre, which is retroFlame's origin.
+			const float nx = 0.0f, ny = -6.0f;
+			const float flicker = 0.9f + 0.1f * sinf(t * 60.0f) + 0.05f * sinf(t * 127.0f);
+			struct Layer { float w; float len; cocos2d::Color4F col; };
+			const Layer layers[3] = {
+				{3.5f, 60.0f, cocos2d::Color4F(0.55f, 0.75f, 1.0f, 0.45f * fade)},
+				{2.4f, 48.0f, cocos2d::Color4F(0.85f, 0.93f, 1.0f, 0.8f * fade)},
+				{1.2f, 34.0f, cocos2d::Color4F(1.0f, 1.0f, 1.0f, fade)},
+			};
+			for (const Layer &L : layers) {
+				const float len = L.len * flicker * (0.6f + 0.4f * fade);
+				const cocos2d::Vec2 poly[3] = {
+					cocos2d::Vec2(nx - L.w, ny),
+					cocos2d::Vec2(nx + L.w, ny),
+					cocos2d::Vec2(nx, ny - len),
+				};
+				retroFlame->drawSolidPoly(poly, 3, L.col);
+			}
+		}
+	}
 	// Shock rings are fixed in world space. They are drawn on a child of the planet, in planet-local coordinates.
 	if (!shockFx) {
 		shockFx = cocos2d::DrawNode::create();
