@@ -58,7 +58,8 @@ void Ship::onKeyPressed(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event*
 		const float nx = sin(rotationRadians), ny = cos(rotationRadians);
 		// Sideways momentum is cancelled. Speed already along the nose is kept, and the boost adds to it.
 		const float along = velX * nx + velY * ny;
-		const float newAlong = (along > 0.0f ? along : 0.0f) + launchSpeed;
+		// The boost lifts the nose speed to 100 px/s but never adds past it. Faster ships keep their speed.
+		const float newAlong = along > launchSpeed ? along : launchSpeed;
 		velX = nx * newAlong;
 		velY = ny * newAlong;
 		launchClock = 0.0f;
