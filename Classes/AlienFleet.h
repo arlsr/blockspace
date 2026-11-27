@@ -75,6 +75,8 @@ private:
     };
 
     cocos2d::Vec2 shipLocal() const;
+    void shipHit();
+    void shipDestroyed();
     int indexOfAlien(int id) const;
     void updateTargeting();
     void fireMissile();
@@ -120,6 +122,10 @@ private:
     int _lockId = 0;             // raider currently locked, 0 for none
     int _nextId = 1;
     float _shipBurn = 0.0f;      // seconds the player's ship stays on fire
+    int _shieldHits = 0;         // hits taken since the shield last came up
+    float _shieldDown = 0.0f;    // seconds until the shield returns, 0 while it is up
+    bool _shipDead = false;      // the ship has exploded and the game is ending
+    float _deathT = 0.0f;        // seconds since the ship exploded
     float _clock = 0.0f;         // game time in seconds, used to order locks
     std::vector<Chunk> _chunks;
     std::vector<Fireball> _fireballs;

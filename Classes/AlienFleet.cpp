@@ -14,7 +14,9 @@ const float kMissileLife = 5.0f;          // seconds before it burns out
 const float kMissileHitRadius = 9.0f;      // px
 const float kBlastLife = 1.6f;
 const float kAlienBurnTime = 3.0f;        // seconds a raider burns before it falls
-const float kShipBurnTime = 8.0f;         // seconds the player's ship burns             // seconds
+const float kShipBurnTime = 8.0f;
+const int kShieldHits = 2;           // hits the shield takes before it deactivates
+const float kShieldDownTime = 60.0f; // seconds the shield stays down         // seconds the player's ship burns             // seconds
 }
 #include "base/CCDirector.h"
 #include "2d/CCLabel.h"
@@ -365,10 +367,62 @@ void AlienFleet::updateDoom(float delta)
     }
 }
 
+// The ship takes one hit: the shield absorbs it, or if it is already down the ship explodes and the game ends.
+void AlienFleet::shipHit()
+{
+    if (_gameOver || _shipDead) {
+        return;
+    }
+    if (_shieldDown > 0.0f) {
+        // No shield: the ship catches fire. A hit while already burning is fatal.
+        if (_shipBurn > 0.0f) {
+            shipDestroyed();
+        } else {
+            _shipBurn = kShipBurnTime;
+        }
+        return;
+    }
+    if (++_shieldHits >= kShieldHits) {
+        _shieldDown = kShieldDownTime;
+        _shieldHits = 0;
+    }
+}
+
+// The ship explodes. The blast plays out first, and the game-over screen follows in update().
+void AlienFleet::shipDestroyed()
+{
+    if (_shipDead) {
+        return;
+    }
+    _shipDead = true;
+    _deathT = 0.0f;
+    _shipBurn = 0.0f;
+    explodeAt(shipLocal(), 1.0f);
+    _ship->setVisible(false);
+}
+
 void AlienFleet::update(float delta)
 {
     if (_gameOver) {
         return;
+    }
+    if (_shipDead) {
+        _deathT += delta;
+        if (_deathT >= kBlastLife) {
+            // The explosion has played out, so the game ends now.
+            _gameOver = true;
+            Director::getInstance()->pause();
+            auto label = Label::createWithSystemFont("GAME OVER", "Arial", 64);
+            label->setPosition(Director::getInstance()->getVisibleOrigin() + Director::getInstance()->getVisibleSize() * 0.5f);
+            Director::getInstance()->getRunningScene()->addChild(label, 1000);
+            return;
+        }
+    }
+    if (_shieldDown > 0.0f) {
+        _shieldDown = std::max(0.0f, _shieldDown - delta);
+        if (_shieldDown <= 0.0f) {
+            _shipBurn = 0.0f; // the shield came back in time, so the fire goes out
+        }
     }
     if (_doomStarted) {
         updateDoom(delta);
@@ -406,6 +460,7 @@ void AlienFleet::update(float delta)
         bool gone = false;
         if (b.pos.distance(ship) < 6.0f) {
             gone = true; // hit the player's ship, no mark
+            shipHit();
         } else if (!b.aimedAtShip && (b.pos.distance(b.target) < 4.0f || (b.target - prev).dot(b.target - b.pos) <= 0.0f)) {
             impactAt(b.target);
             gone = true;
@@ -754,7 +809,7 @@ void AlienFleet::updateMissiles(float delta)
             }
         }
         if (shipPos.distance(b.pos) <= reach) {
-            _shipBurn = kShipBurnTime;
+            shipHit();
         }
     }
     for (size_t i = 0; i < _blasts.size();) {
@@ -807,6 +862,10 @@ void AlienFleet::updateBurning(float delta)
 {
     if (_shipBurn > 0.0f) {
         _shipBurn = std::max(0.0f, _shipBurn - delta);
+        // Burned out with no shield: the ship explodes.
+        if (_shipBurn <= 0.0f && _shieldDown > 0.0f) {
+            shipDestroyed();
+        }
     }
     for (size_t i = 0; i < _aliens.size();) {
         Alien &a = _aliens[i];
@@ -851,6 +910,15 @@ void AlienFleet::drawEffects()
     }
     if (_shipBurn > 0.0f) {
         drawFlames(_fx, shipLocal(), _clock, 10.0f);
+    }
+    // Shield bubble, shown only while the shield is up.
+    if (_shieldDown <= 0.0f && !_gameOver) {
+        const Vec2 c = shipLocal();
+        const int seg = 48;
+        for (int k = 0; k < seg; k++) {
+            const float a0 = 6.2831853f * k / seg, a1 = 6.2831853f * (k + 1) / seg;
+            _fx->drawSegment(Vec2(c.x + 14.0f * cosf(a0), c.y + 14.0f * sinf(a0)), Vec2(c.x + 14.0f * cosf(a1), c.y + 14.0f * sinf(a1)), 0.4f, Color4F(0.5f, 0.85f, 1.0f, 0.15f * powf(0.5f, (float)_shieldHits)));
+        }
     }
 
     for (const Missile &m : _missiles) {
