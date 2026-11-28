@@ -406,6 +406,12 @@ void AlienFleet::update(float delta)
     if (_gameOver) {
         return;
     }
+    // Spacebar boost sound: the ship raises a flag on launch and the fleet plays the clip.
+    Ship *launchShip = static_cast<Ship *>(_ship);
+    if (launchShip->launchSoundPending) {
+        launchShip->launchSoundPending = false;
+        AudioEngine::play2d("sfx/generated/boost_burn.ogg", false, 1.0f);
+    }
     if (_shipDead) {
         _deathT += delta;
         if (_deathT >= kBlastLife) {

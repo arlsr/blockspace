@@ -63,6 +63,7 @@ void Ship::onKeyPressed(cocos2d::EventKeyboard::KeyCode keyCode, cocos2d::Event*
 		velX = nx * newAlong;
 		velY = ny * newAlong;
 		launchClock = 0.0f;
+		launchSoundPending = true;
 	}
 }
 

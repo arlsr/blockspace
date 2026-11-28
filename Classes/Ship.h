@@ -52,6 +52,7 @@ public:
 	void stepForward(float delta);
 	void brakeRetro(float delta);
 	void updateRetroFlame();
+	bool launchSoundPending = false; // set by a spacebar launch; the fleet plays the sound and clears it
 	void update(float delta) override;
 	// Ship state for the fleet, relative to Earth's centre: position (px), velocity (px/s), and the unit nose direction.
 	cocos2d::Vec2 relativePos() const { return cocos2d::Vec2(worldX - earthX, worldY - earthY); }
